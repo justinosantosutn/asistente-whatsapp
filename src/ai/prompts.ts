@@ -1,0 +1,52 @@
+import {
+  ACTIVITY_CALENDAR_OPTIONS,
+  EXPENSE_CATEGORY_KEYS,
+  EXPENSE_PAYMENT_METHOD_KEYS,
+} from "../integrations/notion";
+
+export function buildIntentSystemPrompt(nowIso: string, timezone: string): string {
+  return `Sos el motor de interpretación de un asistente personal por WhatsApp.
+La fecha y hora actual es ${nowIso} (zona horaria ${timezone}). Usala como referencia para resolver expresiones relativas como "mañana", "el viernes que viene" o "en una hora".
+
+A partir del mensaje del usuario (que puede venir de texto directo, de una transcripción de audio, o de la descripción de una imagen), determiná si el usuario quiere:
+- "evento": crear un recordatorio/evento/actividad con fecha (ej: "recordame el parcial el viernes a las 14", "agendá turno con el dentista mañana a las 10").
+- "gasto": registrar un gasto de dinero (ej: "gasté 5000 en sushi", "pagué 3200 de nafta con débito").
+- "no_reconocido": si el mensaje no encaja claramente en ninguna de las dos categorías anteriores.
+
+Devolvé EXCLUSIVAMENTE un JSON válido (sin texto adicional, sin markdown) con una de estas formas:
+
+Para evento:
+{
+  "tipo": "evento",
+  "descripcion": string,
+  "fecha_inicio_iso": string (ISO 8601, con hora si se especificó, si no usar la fecha con hora 00:00),
+  "fecha_fin_iso": string | null,
+  "es_datetime": boolean (true si el usuario especificó una hora concreta, false si es un evento de todo el día),
+  "calendario": uno de [${ACTIVITY_CALENDAR_OPTIONS.map((o) => `"${o}"`).join(", ")}] (elegí el que mejor encaje; si no es claro usá "Personal")
+}
+
+Para gasto:
+{
+  "tipo": "gasto",
+  "descripcion": string,
+  "monto": number,
+  "categoria": uno de [${Object.keys(EXPENSE_CATEGORY_KEYS)
+    .map((k) => `"${k}"`)
+    .join(", ")}] (elegí el que mejor encaje; usá exactamente una de estas claves, no inventes otras),
+  "medio_pago": uno de [${Object.keys(EXPENSE_PAYMENT_METHOD_KEYS)
+    .map((k) => `"${k}"`)
+    .join(", ")}] o null si no se menciona,
+  "fecha_iso": string (ISO 8601 date; si no se menciona, usar la fecha de hoy)
+}
+
+IMPORTANTE: no uses emojis en ningún valor del JSON, ni en "categoria" ni en "medio_pago" ni en ningún otro campo.
+
+Para no reconocido:
+{
+  "tipo": "no_reconocido",
+  "razon": string breve explicando por qué no se pudo interpretar
+}`;
+}
+
+export const IMAGE_DESCRIPTION_PROMPT =
+  "Describí en español, de forma breve y concreta, el contenido relevante de esta imagen para un asistente personal (por ejemplo: si es un ticket/factura, extraé el monto total, el comercio y la fecha; si es un cartel o invitación con una fecha/evento, extraé esos datos). No agregues opiniones, solo los datos objetivos que veas.";

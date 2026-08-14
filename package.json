@@ -1,0 +1,32 @@
+{
+  "name": "asistente-personal-whatsapp",
+  "version": "1.0.0",
+  "description": "Bot de WhatsApp que crea eventos en Notion y Google Calendar, y registra gastos, entendiendo texto, audio e imagenes.",
+  "private": true,
+  "type": "commonjs",
+  "main": "dist/src/server.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/src/server.js",
+    "dev": "tsx watch src/server.ts",
+    "oauth:google": "tsx scripts/google-oauth-setup.ts",
+    "test:notion": "tsx scripts/test-notion.ts",
+    "test:calendar": "tsx scripts/test-calendar.ts",
+    "test:groq": "tsx scripts/test-groq.ts"
+  },
+  "dependencies": {
+    "@notionhq/client": "^5.25.2",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "gaxios": "^7.3.1",
+    "google-auth-library": "^11.0.2",
+    "googleapis": "^174.0.1",
+    "groq-sdk": "^1.5.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.10",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.3"
+  }
+}
