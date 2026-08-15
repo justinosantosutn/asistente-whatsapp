@@ -94,6 +94,7 @@ export type IntentResult =
 export async function extractIntent(text: string): Promise<IntentResult> {
   const { textModel } = getGroqConfig();
   const nowLocal = nowInTimezone(timezone);
+  console.log(`[extractIntent] ahora local (${timezone}): ${nowLocal} | mensaje: "${text}"`);
 
   const completion = await getClient().chat.completions.create({
     model: textModel,
@@ -106,5 +107,6 @@ export async function extractIntent(text: string): Promise<IntentResult> {
   });
 
   const raw = completion.choices[0]?.message?.content ?? "{}";
+  console.log(`[extractIntent] respuesta cruda del modelo: ${raw}`);
   return JSON.parse(raw) as IntentResult;
 }
