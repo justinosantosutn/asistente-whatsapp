@@ -9,6 +9,23 @@ function getClient(): Client {
   return client;
 }
 
+// La API de Notion consulta (query) por "data source id", que es distinto
+// del "database id" que usamos para crear páginas. Lo resolvemos una sola
+// vez por base y lo cacheamos en memoria.
+const dataSourceIdCache = new Map<string, string>();
+async function getDataSourceId(databaseId: string): Promise<string> {
+  const cached = dataSourceIdCache.get(databaseId);
+  if (cached) return cached;
+
+  const database = await getClient().databases.retrieve({ database_id: databaseId });
+  const dataSourceId = (database as any).data_sources?.[0]?.id;
+  if (!dataSourceId) {
+    throw new Error(`No se encontró data source para la base ${databaseId}`);
+  }
+  dataSourceIdCache.set(databaseId, dataSourceId);
+  return dataSourceId;
+}
+
 export const ACTIVITY_CALENDAR_OPTIONS = [
   "Facultad",
   "Parciales",
@@ -86,6 +103,76 @@ export async function createActivity(input: CreateActivityInput): Promise<string
   });
 
   return (page as any).url ?? page.id;
+}
+
+export interface ActivityMatch {
+  pageId: string;
+  actividad: string;
+  fechaInicioIso: string | null;
+  url: string;
+}
+
+// Busca actividades cuyo título contenga `query`, opcionalmente acotado a un
+// solo día (`dateHintIso`, formato YYYY-MM-DD) para desambiguar mejor.
+export async function findActivities(query: string, dateHintIso?: string): Promise<ActivityMatch[]> {
+  const { activitiesDataSourceId } = getNotionConfig();
+  const dataSourceId = await getDataSourceId(activitiesDataSourceId);
+
+  const dateFilter = dateHintIso
+    ? [
+        {
+          property: "Fecha",
+          date: { on_or_after: `${dateHintIso}T00:00:00`, before: `${dateHintIso}T23:59:59` },
+        },
+      ]
+    : [];
+
+  const results = await getClient().dataSources.query({
+    data_source_id: dataSourceId,
+    filter: {
+      and: [{ property: "Actividad", title: { contains: query } }, ...dateFilter],
+    },
+    page_size: 10,
+  });
+
+  return (results.results as any[]).map((page) => ({
+    pageId: page.id,
+    actividad: page.properties?.Actividad?.title?.[0]?.plain_text ?? "(sin título)",
+    fechaInicioIso: page.properties?.Fecha?.date?.start ?? null,
+    url: page.url,
+  }));
+}
+
+export interface UpdateActivityInput {
+  actividad?: string;
+  fechaInicioIso?: string;
+  fechaFinIso?: string;
+  calendario?: ActivityCalendar;
+}
+
+export async function updateActivity(pageId: string, updates: UpdateActivityInput): Promise<void> {
+  const properties: Record<string, unknown> = {};
+
+  if (updates.actividad) {
+    properties.Actividad = { title: [{ text: { content: updates.actividad } }] };
+  }
+  if (updates.fechaInicioIso) {
+    properties.Fecha = {
+      date: {
+        start: updates.fechaInicioIso,
+        ...(updates.fechaFinIso ? { end: updates.fechaFinIso } : {}),
+      },
+    };
+  }
+  if (updates.calendario) {
+    properties.Calendario = { select: { name: updates.calendario } };
+  }
+
+  await getClient().pages.update({ page_id: pageId, properties: properties as any });
+}
+
+export async function archiveActivity(pageId: string): Promise<void> {
+  await getClient().pages.update({ page_id: pageId, archived: true });
 }
 
 export interface CreateExpenseInput {

@@ -4,12 +4,22 @@ import { describeImage, extractIntent, transcribeAudio } from "../ai/groq";
 import {
   ACTIVITY_CALENDAR_OPTIONS,
   ActivityCalendar,
+  ActivityMatch,
+  archiveActivity,
   createActivity,
   createExpense,
   EXPENSE_CATEGORY_KEYS,
   EXPENSE_PAYMENT_METHOD_KEYS,
+  findActivities,
+  updateActivity,
 } from "../integrations/notion";
-import { createEvent } from "../integrations/googleCalendar";
+import {
+  CalendarEventMatch,
+  createEvent,
+  deleteEvent,
+  findEvents,
+  updateEvent,
+} from "../integrations/googleCalendar";
 
 export function normalizeMessage(message: WhatsappMessage): IncomingMessage | null {
   if (message.type === "text" && message.text) {
@@ -44,6 +54,205 @@ function coerceKey<T extends Record<string, string>>(
   return value in map ? map[value as keyof T] : map[fallbackKey];
 }
 
+// --- Desambiguación cuando la búsqueda de un evento a borrar/modificar
+// devuelve más de un resultado: guardamos en memoria qué le preguntamos a
+// cada usuario, y esperamos que el próximo mensaje sea su elección.
+
+type PendingAction =
+  | { kind: "eliminar" }
+  | {
+      kind: "modificar";
+      nuevaFechaInicioIso: string | null;
+      nuevaFechaFinIso: string | null;
+      nuevaDescripcion: string | null;
+    };
+
+interface Candidate {
+  source: "notion" | "calendar";
+  id: string;
+  label: string;
+}
+
+interface PendingDisambiguation {
+  candidates: Candidate[];
+  action: PendingAction;
+  createdAt: number;
+}
+
+const pendingByUser = new Map<string, PendingDisambiguation>();
+const PENDING_TTL_MS = 5 * 60 * 1000;
+
+function formatFecha(iso: string | null): string {
+  if (!iso) return "(sin fecha)";
+  return iso.slice(0, 16).replace("T", " ");
+}
+
+async function searchCandidates(
+  busqueda: string,
+  fechaHintIso: string | null
+): Promise<{ notion: ActivityMatch[]; calendar: CalendarEventMatch[] }> {
+  const [notion, calendar] = await Promise.all([
+    findActivities(busqueda, fechaHintIso ?? undefined),
+    findEvents(busqueda, fechaHintIso ?? undefined),
+  ]);
+  return { notion, calendar };
+}
+
+function toCandidates(notion: ActivityMatch[], calendar: CalendarEventMatch[]): Candidate[] {
+  return [
+    ...notion.map((a) => ({
+      source: "notion" as const,
+      id: a.pageId,
+      label: `[Notion] ${a.actividad} — ${formatFecha(a.fechaInicioIso)}`,
+    })),
+    ...calendar.map((e) => ({
+      source: "calendar" as const,
+      id: e.eventId,
+      label: `[Calendar] ${e.summary} — ${formatFecha(e.startIso)}`,
+    })),
+  ];
+}
+
+async function applyAction(candidate: Candidate, action: PendingAction): Promise<void> {
+  if (action.kind === "eliminar") {
+    if (candidate.source === "notion") {
+      await archiveActivity(candidate.id);
+    } else {
+      await deleteEvent(candidate.id);
+    }
+    return;
+  }
+
+  if (candidate.source === "notion") {
+    await updateActivity(candidate.id, {
+      actividad: action.nuevaDescripcion ?? undefined,
+      fechaInicioIso: action.nuevaFechaInicioIso ?? undefined,
+      fechaFinIso: action.nuevaFechaFinIso ?? undefined,
+    });
+  } else {
+    await updateEvent(candidate.id, {
+      summary: action.nuevaDescripcion ?? undefined,
+      startIso: action.nuevaFechaInicioIso ?? undefined,
+      endIso: action.nuevaFechaFinIso ?? undefined,
+      isAllDay: false,
+    });
+  }
+}
+
+async function tryResolvePending(from: string, text: string): Promise<boolean> {
+  const pending = pendingByUser.get(from);
+  if (!pending) return false;
+
+  if (Date.now() - pending.createdAt > PENDING_TTL_MS) {
+    pendingByUser.delete(from);
+    return false;
+  }
+
+  if (/cancel|olvid|dejalo/i.test(text)) {
+    pendingByUser.delete(from);
+    await sendText(from, "Listo, cancelado.");
+    return true;
+  }
+
+  const match = text.match(/\d+/);
+  const index = match ? Number(match[0]) - 1 : -1;
+
+  if (index < 0 || index >= pending.candidates.length) {
+    await sendText(
+      from,
+      `No entendí cuál. Respondé con el número correspondiente:\n${pending.candidates
+        .map((c, i) => `${i + 1}) ${c.label}`)
+        .join("\n")}\n(o "cancelar")`
+    );
+    return true;
+  }
+
+  const chosen = pending.candidates[index];
+  pendingByUser.delete(from);
+
+  try {
+    await applyAction(chosen, pending.action);
+    await sendText(
+      from,
+      pending.action.kind === "eliminar" ? `Listo, borré "${chosen.label}".` : `Listo, actualicé "${chosen.label}".`
+    );
+  } catch (err) {
+    console.error("Error aplicando acción sobre candidato elegido:", err);
+    await sendText(from, "Entendí cuál, pero falló al aplicarlo. Voy a revisar el error.");
+  }
+
+  return true;
+}
+
+async function handleEliminarEvento(from: string, busqueda: string, fechaHintIso: string | null): Promise<void> {
+  const { notion, calendar } = await searchCandidates(busqueda, fechaHintIso);
+
+  if (notion.length === 0 && calendar.length === 0) {
+    await sendText(from, `No encontré ningún evento que coincida con "${busqueda}".`);
+    return;
+  }
+
+  if (notion.length <= 1 && calendar.length <= 1) {
+    const results: string[] = [];
+    if (notion[0]) {
+      await archiveActivity(notion[0].pageId);
+      results.push("Notion");
+    }
+    if (calendar[0]) {
+      await deleteEvent(calendar[0].eventId);
+      results.push("Google Calendar");
+    }
+    await sendText(from, `Listo, borré "${busqueda}" de ${results.join(" y ")}.`);
+    return;
+  }
+
+  const candidates = toCandidates(notion, calendar);
+  pendingByUser.set(from, { candidates, action: { kind: "eliminar" }, createdAt: Date.now() });
+  await sendText(
+    from,
+    `Encontré varios eventos con "${busqueda}". ¿Cuál borro? Respondé con el número:\n${candidates
+      .map((c, i) => `${i + 1}) ${c.label}`)
+      .join("\n")}`
+  );
+}
+
+async function handleModificarEvento(
+  from: string,
+  busqueda: string,
+  fechaHintIso: string | null,
+  action: Extract<PendingAction, { kind: "modificar" }>
+): Promise<void> {
+  const { notion, calendar } = await searchCandidates(busqueda, fechaHintIso);
+
+  if (notion.length === 0 && calendar.length === 0) {
+    await sendText(from, `No encontré ningún evento que coincida con "${busqueda}".`);
+    return;
+  }
+
+  if (notion.length <= 1 && calendar.length <= 1) {
+    const results: string[] = [];
+    if (notion[0]) {
+      await applyAction({ source: "notion", id: notion[0].pageId, label: notion[0].actividad }, action);
+      results.push("Notion");
+    }
+    if (calendar[0]) {
+      await applyAction({ source: "calendar", id: calendar[0].eventId, label: calendar[0].summary }, action);
+      results.push("Google Calendar");
+    }
+    await sendText(from, `Listo, actualicé "${busqueda}" en ${results.join(" y ")}.`);
+    return;
+  }
+
+  const candidates = toCandidates(notion, calendar);
+  pendingByUser.set(from, { candidates, action, createdAt: Date.now() });
+  await sendText(
+    from,
+    `Encontré varios eventos con "${busqueda}". ¿Cuál modifico? Respondé con el número:\n${candidates
+      .map((c, i) => `${i + 1}) ${c.label}`)
+      .join("\n")}`
+  );
+}
+
 export async function handleIncomingMessage(message: WhatsappMessage): Promise<void> {
   const normalized = normalizeMessage(message);
   if (!normalized) {
@@ -61,6 +270,10 @@ export async function handleIncomingMessage(message: WhatsappMessage): Promise<v
 
   if (!text.trim()) {
     await sendText(normalized.from, "No entendí el contenido del mensaje. ¿Podés reformularlo?");
+    return;
+  }
+
+  if (await tryResolvePending(normalized.from, text)) {
     return;
   }
 
@@ -121,9 +334,24 @@ export async function handleIncomingMessage(message: WhatsappMessage): Promise<v
       return;
     }
 
+    if (intent.tipo === "eliminar_evento") {
+      await handleEliminarEvento(normalized.from, intent.busqueda, intent.fecha_referencia_iso);
+      return;
+    }
+
+    if (intent.tipo === "modificar_evento") {
+      await handleModificarEvento(normalized.from, intent.busqueda, intent.fecha_referencia_iso, {
+        kind: "modificar",
+        nuevaFechaInicioIso: intent.nueva_fecha_inicio_iso,
+        nuevaFechaFinIso: intent.nueva_fecha_fin_iso,
+        nuevaDescripcion: intent.nueva_descripcion,
+      });
+      return;
+    }
+
     await sendText(
       normalized.from,
-      "No pude identificar si querías crear un evento o registrar un gasto. ¿Podés ser más específico?"
+      "No pude identificar qué querías hacer. ¿Podés ser más específico?"
     );
   } catch (err) {
     console.error("Error ejecutando la acción (Notion/Calendar):", err);

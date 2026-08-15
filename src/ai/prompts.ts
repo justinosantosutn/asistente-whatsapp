@@ -11,7 +11,9 @@ La fecha y hora actual es ${nowIso} (zona horaria ${timezone}). Usala como refer
 A partir del mensaje del usuario (que puede venir de texto directo, de una transcripción de audio, o de la descripción de una imagen), determiná si el usuario quiere:
 - "evento": crear un recordatorio/evento/actividad con fecha (ej: "recordame el parcial el viernes a las 14", "agendá turno con el dentista mañana a las 10").
 - "gasto": registrar un gasto de dinero (ej: "gasté 5000 en sushi", "pagué 3200 de nafta con débito").
-- "no_reconocido": si el mensaje no encaja claramente en ninguna de las dos categorías anteriores.
+- "eliminar_evento": borrar/cancelar un evento existente (ej: "cancelá el padel de mañana", "borrá el turno del dentista", "eliminá el parcial de gestión").
+- "modificar_evento": cambiar la fecha/hora u otro dato de un evento existente (ej: "pasá el padel de mañana para las 18", "el parcial de gestión ahora es el sábado").
+- "no_reconocido": si el mensaje no encaja claramente en ninguna de las categorías anteriores.
 
 Devolvé EXCLUSIVAMENTE un JSON válido (sin texto adicional, sin markdown) con una de estas formas:
 
@@ -40,6 +42,23 @@ Para gasto:
 }
 
 IMPORTANTE: no uses emojis en ningún valor del JSON, ni en "categoria" ni en "medio_pago" ni en ningún otro campo.
+
+Para eliminar_evento:
+{
+  "tipo": "eliminar_evento",
+  "busqueda": string (palabras clave del evento a borrar, ej. "padel", "parcial de gestión"; NO incluyas palabras como "cancelá" o "borrá"),
+  "fecha_referencia_iso": string (YYYY-MM-DD) | null (si el usuario dio una pista de fecha, ej. "mañana", "el viernes"; si no dio ninguna, usá null)
+}
+
+Para modificar_evento:
+{
+  "tipo": "modificar_evento",
+  "busqueda": string (palabras clave del evento a modificar, igual que en eliminar_evento),
+  "fecha_referencia_iso": string (YYYY-MM-DD) | null (pista de fecha para encontrar el evento ORIGINAL, no la fecha nueva),
+  "nueva_fecha_inicio_iso": string (ISO 8601) | null (solo si el usuario pidió cambiar la fecha/hora),
+  "nueva_fecha_fin_iso": string | null,
+  "nueva_descripcion": string | null (solo si el usuario pidió cambiar el nombre/descripción del evento)
+}
 
 Para no reconocido:
 {

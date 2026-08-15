@@ -89,6 +89,19 @@ export type IntentResult =
       medio_pago: string | null;
       fecha_iso: string;
     }
+  | {
+      tipo: "eliminar_evento";
+      busqueda: string;
+      fecha_referencia_iso: string | null;
+    }
+  | {
+      tipo: "modificar_evento";
+      busqueda: string;
+      fecha_referencia_iso: string | null;
+      nueva_fecha_inicio_iso: string | null;
+      nueva_fecha_fin_iso: string | null;
+      nueva_descripcion: string | null;
+    }
   | { tipo: "no_reconocido"; razon: string };
 
 export async function extractIntent(text: string): Promise<IntentResult> {
