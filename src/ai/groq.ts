@@ -2,6 +2,29 @@ import Groq from "groq-sdk";
 import { getGroqConfig, timezone } from "../config";
 import { buildIntentSystemPrompt, IMAGE_DESCRIPTION_PROMPT } from "./prompts";
 
+// Devuelve la fecha/hora actual como string local a la zona horaria dada
+// (sin conversión a UTC), para que el modelo resuelva expresiones relativas
+// ("mañana", "el viernes") respecto al día real del usuario, no al de UTC.
+function nowInTimezone(tz: string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  })
+    .formatToParts(new Date())
+    .reduce<Record<string, string>>((acc, part) => {
+      acc[part.type] = part.value;
+      return acc;
+    }, {});
+
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`;
+}
+
 let client: Groq | null = null;
 function getClient(): Groq {
   if (!client) {
@@ -70,14 +93,14 @@ export type IntentResult =
 
 export async function extractIntent(text: string): Promise<IntentResult> {
   const { textModel } = getGroqConfig();
-  const nowIso = new Date().toISOString();
+  const nowLocal = nowInTimezone(timezone);
 
   const completion = await getClient().chat.completions.create({
     model: textModel,
     response_format: { type: "json_object" },
     temperature: 0,
     messages: [
-      { role: "system", content: buildIntentSystemPrompt(nowIso, timezone) },
+      { role: "system", content: buildIntentSystemPrompt(nowLocal, timezone) },
       { role: "user", content: text },
     ],
   });
