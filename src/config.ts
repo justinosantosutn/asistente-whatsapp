@@ -30,7 +30,7 @@ export function getGroqConfig() {
   return {
     apiKey: required("GROQ_API_KEY"),
     transcriptionModel: process.env.GROQ_TRANSCRIPTION_MODEL ?? "whisper-large-v3-turbo",
-    visionModel: process.env.GROQ_VISION_MODEL ?? "meta-llama/llama-4-scout-17b-16e-instruct",
+    visionModel: process.env.GROQ_VISION_MODEL ?? "qwen/qwen3.6-27b",
     textModel: process.env.GROQ_TEXT_MODEL ?? "llama-3.3-70b-versatile",
   };
 }
