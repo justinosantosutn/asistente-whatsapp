@@ -5,6 +5,15 @@ function graphUrl(path: string): string {
   return `https://graph.facebook.com/${apiVersion}/${path}`;
 }
 
+// Los números argentinos llegan en los webhooks con un "9" extra tras el
+// código de país (ej. 54 9 3471 344387, indicador histórico de celular),
+// pero la Graph API rechaza ese formato al enviar mensajes: hay que sacar
+// el "9" para que coincida con el número tal como está en la lista de
+// destinatarios autorizados.
+function toSendableNumber(waId: string): string {
+  return waId.startsWith("549") ? `54${waId.slice(3)}` : waId;
+}
+
 export async function sendText(to: string, body: string): Promise<void> {
   const { accessToken, phoneNumberId } = getWhatsappConfig();
 
@@ -16,7 +25,7 @@ export async function sendText(to: string, body: string): Promise<void> {
     },
     body: JSON.stringify({
       messaging_product: "whatsapp",
-      to,
+      to: toSendableNumber(to),
       type: "text",
       text: { body },
     }),
