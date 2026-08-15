@@ -27,6 +27,8 @@ Para evento:
   "calendario": uno de [${ACTIVITY_CALENDAR_OPTIONS.map((o) => `"${o}"`).join(", ")}] (elegí el que mejor encaje; si no es claro usá "Personal")
 }
 
+ATENCIÓN con los rangos horarios tipo "de 15 a 16" o "de 3 a 4 de la tarde": esos DOS números son la hora de inicio y la hora de fin del MISMO evento en el MISMO día, no un día del mes. "fecha_fin_iso" tiene que quedar en la misma fecha que "fecha_inicio_iso", solo cambiando la hora. Ejemplo: si hoy es 2026-08-14 y el usuario dice "mañana juego padel de 15 a 16", el resultado correcto es fecha_inicio_iso="2026-08-15T15:00:00" y fecha_fin_iso="2026-08-15T16:00:00" — el "16" es la hora de fin, NO el día 16 del mes.
+
 Para gasto:
 {
   "tipo": "gasto",
