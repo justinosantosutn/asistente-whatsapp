@@ -53,7 +53,7 @@ export async function describeImage(image: Buffer, mimeType: string, caption?: s
   const dataUrl = `data:${mimeType};base64,${base64}`;
 
   const prompt = caption
-    ? `${IMAGE_DESCRIPTION_PROMPT}\n\nEl usuario agregó este texto junto a la imagen: "${caption}"`
+    ? `${IMAGE_DESCRIPTION_PROMPT}\n\nEl usuario agregó esta aclaración junto a la imagen (usala para completar en qué se gastó): "${caption}"`
     : IMAGE_DESCRIPTION_PROMPT;
 
   const completion = await getClient().chat.completions.create({
