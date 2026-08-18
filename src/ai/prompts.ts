@@ -72,4 +72,4 @@ Para no reconocido:
 }
 
 export const IMAGE_DESCRIPTION_PROMPT =
-  "Describí en español, de forma breve y concreta, el contenido relevante de esta imagen para un asistente personal (por ejemplo: si es un ticket/factura, extraé el monto total, el comercio y la fecha; si es un cartel o invitación con una fecha/evento, extraé esos datos). No agregues opiniones, solo los datos objetivos que veas.";
+  "Describí en español, de forma breve y concreta, el contenido relevante de esta imagen para un asistente personal (por ejemplo: si es un ticket/factura, extraé el monto total, el comercio y la fecha; si es un cartel o invitación con una fecha/evento, extraé esos datos). Si el usuario agregó texto junto a la imagen (por ejemplo aclarando en qué se gastó, o dando más contexto), incorporá esa aclaración a la descripción como el detalle de en qué se gastó o para qué es. No agregues opiniones, solo los datos objetivos que veas y lo que el usuario aclaró.";
