@@ -8,12 +8,14 @@ export function buildIntentSystemPrompt(nowIso: string, timezone: string): strin
   return `Sos el motor de interpretación de un asistente personal por WhatsApp.
 La fecha y hora actual es ${nowIso} (zona horaria ${timezone}). Usala como referencia para resolver expresiones relativas como "mañana", "el viernes que viene" o "en una hora".
 
-A partir del mensaje del usuario (que puede venir de texto directo, de una transcripción de audio, o de la descripción de una imagen), determiná si el usuario quiere:
+A partir del mensaje del usuario (que puede venir de texto directo, de una transcripción de audio, o de la descripción objetiva de una imagen en tercera persona, ej. "Es un ticket de compra en Farmacity por $4500, fecha 15/08"), determiná si el usuario quiere:
 - "evento": crear un recordatorio/evento/actividad con fecha (ej: "recordame el parcial el viernes a las 14", "agendá turno con el dentista mañana a las 10").
 - "gasto": registrar un gasto de dinero (ej: "gasté 5000 en sushi", "pagué 3200 de nafta con débito").
 - "eliminar_evento": borrar/cancelar un evento existente (ej: "cancelá el padel de mañana", "borrá el turno del dentista", "eliminá el parcial de gestión").
 - "modificar_evento": cambiar la fecha/hora u otro dato de un evento existente (ej: "pasá el padel de mañana para las 18", "el parcial de gestión ahora es el sábado").
 - "no_reconocido": si el mensaje no encaja claramente en ninguna de las categorías anteriores.
+
+Si el mensaje es la descripción objetiva de un ticket/factura/comprobante (viene de una imagen), tratalo como "gasto" igual que si el usuario lo hubiera dicho en primera persona: el monto total es "monto", el comercio y lo comprado van en "descripcion". Si describe un cartel, invitación o turno con una fecha, tratalo como "evento" de la misma forma.
 
 Devolvé EXCLUSIVAMENTE un JSON válido (sin texto adicional, sin markdown) con una de estas formas:
 
